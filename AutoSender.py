@@ -1,9 +1,7 @@
-
 # meta developer: @OptiPulseMod
 
-
 """
-AutoSpammer Module for Hikka Userbot
+AutoSpammer Module for Heroku Userbot
 
 Copyright (c) 2025 @OptiPulseMod
 
@@ -11,7 +9,7 @@ Copyright (c) 2025 @OptiPulseMod
 License:
 
 EN:
-This module is developed by @veyrixzz and provided "as is".
+This module is developed by @OptiPulseMod and provided "as is".
 Use is only permitted in its original, unmodified form.
 Copying, modification, or redistribution is strictly prohibited.
 
@@ -20,8 +18,10 @@ RU:
 Использование разрешено только в оригинальном, неизменённом виде.
 Копирование, модификация или распространение строго запрещены.
 """
+
 from hikka import loader, utils
 import asyncio
+from telethon.tl.types import Dialog, Folder, InputPeerChannel, InputPeerChat
 
 @loader.tds
 class AutoSenderMod(loader.Module):
@@ -36,6 +36,9 @@ class AutoSenderMod(loader.Module):
         "groups_set": "📨 Группы/папки установлены: {}.",
         "no_groups": "❌ Не указаны группы/папки.",
         "no_text": "❌ Не указан текст сообщения.",
+        "folder_processing": "📂 Обработка папки: {}",
+        "folder_error": "❌ Ошибка при обработке папки: {}",
+        "invalid_target": "❌ Некорректная цель: {}",
     }
 
     def __init__(self):
@@ -44,6 +47,10 @@ class AutoSenderMod(loader.Module):
         self.interval = 60
         self.task = None
         self.running = False
+        self.message = None
+
+    async def client_ready(self, client, db):
+        self.client = client
 
     async def autogroupcmd(self, message):
         """<ссылки_или_ID_групп/папок> — Установить список групп/папок для авторассылки"""
@@ -71,11 +78,13 @@ class AutoSenderMod(loader.Module):
 
     async def autosendcmd(self, message):
         """Включить или выключить авторассылку"""
+        self.message = message
         if self.running:
             self.running = False
             if self.task:
                 self.task.cancel()
             return await utils.answer(message, self.strings("stop_spam"))
+        
         if not self.groups:
             return await utils.answer(message, self.strings("no_groups"))
         if not self.text:
@@ -85,34 +94,56 @@ class AutoSenderMod(loader.Module):
         self.task = asyncio.create_task(self._autospam())
         await utils.answer(message, self.strings("start_spam"))
 
-    async def _get_chats_from_folder(self, folder_link):
+    async def _get_chats_from_folder(self, folder_name):
         """Получает все чаты из указанной папки"""
         try:
-            folder = await self._client.get_entity(folder_link)
-            if not hasattr(folder, 'chats'):
-                return []
-            return folder.chats
+            dialogs = await self.client.get_dialogs()
+            folder_chats = []
+            
+            for dialog in dialogs:
+                if hasattr(dialog, 'folder') and dialog.folder and dialog.folder.title.lower() == folder_name.lower():
+                    if isinstance(dialog.entity, (InputPeerChannel, InputPeerChat)):
+                        folder_chats.append(dialog.entity)
+                    else:
+                        try:
+                            entity = await self.client.get_input_entity(dialog.entity)
+                            folder_chats.append(entity)
+                        except Exception as e:
+                            print(f"[AutoSpammer] Не удалось получить entity для диалога: {e}")
+            
+            return folder_chats
         except Exception as e:
             print(f"[AutoSpammer] Ошибка при получении чатов из папки: {e}")
             return []
 
     async def _autospam(self):
-        try:
-            while self.running:
-                for target in self.groups:
-                    try:
-                        if "folder" in target.lower():
-                            chats = await self._get_chats_from_folder(target)
-                            for chat in chats:
-                                try:
-                                    await self._client.send_message(chat.id, self.text)
-                                except Exception as e:
-                                    print(f"[AutoSpammer] Не удалось отправить сообщение в чат {chat.id} из папки: {e}")
-                        else:
-                            await self._client.send_message(target, self.text)
-                    except Exception as e:
-                        print(f"[AutoSpammer] Ошибка при обработке цели {target}: {e}")
-                
-                await asyncio.sleep(self.interval)
-        except asyncio.CancelledError:
-            pass
+        while self.running:
+            for target in self.groups:
+                try:
+                    # Если цель - папка (начинается с folder:)
+                    if target.lower().startswith("folder:"):
+                        folder_name = target[7:].strip()
+                        await utils.answer(self.message, self.strings("folder_processing").format(folder_name))
+                        
+                        chats = await self._get_chats_from_folder(folder_name)
+                        if not chats:
+                            await utils.answer(self.message, self.strings("folder_error").format(folder_name))
+                            continue
+                            
+                        for chat in chats:
+                            try:
+                                await self.client.send_message(chat, self.text)
+                                await asyncio.sleep(1)  # Небольшая задержка между сообщениями
+                            except Exception as e:
+                                print(f"[AutoSpammer] Ошибка при отправке в чат {chat}: {e}")
+                    else:
+                        # Обычная группа/чат
+                        try:
+                            await self.client.send_message(target, self.text)
+                        except Exception as e:
+                            print(f"[AutoSpammer] Ошибка при отправке в {target}: {e}")
+                            await utils.answer(self.message, self.strings("invalid_target").format(target))
+                except Exception as e:
+                    print(f"[AutoSpammer] Ошибка при обработке цели {target}: {e}")
+            
+            await asyncio.sleep(self.interval)
