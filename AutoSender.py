@@ -38,7 +38,6 @@ class AutoSenderMod(loader.Module):
                 1,
                 "Задержка между сообщениями",
                 validator=loader.validators.Integer(minimum=1, maximum=10)
-            ),
         )
         self.text = None
         self.chats = []
@@ -132,7 +131,6 @@ class AutoSenderMod(loader.Module):
         self.is_active = False
         if self.task:
             self.task.cancel()
-            self.task = None
         await utils.answer(message, self.strings["stop"])
 
     async def _get_chats_in_folder(self, folder_name):
@@ -149,9 +147,10 @@ class AutoSenderMod(loader.Module):
                     except Exception as e:
                         print(f"Error getting entity: {e}")
             
-            return folder_chats, None
+            return folder_chats
         except Exception as e:
-            return [], str(e)
+            print(f"Folder error: {e}")
+            return []
 
     async def _spam_loop(self, message):
         while self.is_active:
@@ -160,17 +159,13 @@ class AutoSenderMod(loader.Module):
             targets.extend(self.chats)
             
             for folder in self.folders:
-                folder_chats, error = await self._get_chats_in_folder(folder)
-                if error:
-                    await utils.answer(
-                        message,
-                        self.strings["folder_error"].format(folder, error)
-                    )
-                elif folder_chats:
+                folder_chats = await self._get_chats_in_folder(folder)
+                if folder_chats:
                     targets.extend(folder_chats)
                     await utils.answer(
                         message,
                         self.strings["folder_stats"].format(folder, len(folder_chats))
+                    )
             
             if not targets:
                 await utils.answer(message, self.strings["no_targets"])
@@ -202,8 +197,4 @@ class AutoSenderMod(loader.Module):
                     )
             
             if self.is_active:
-                await utils.answer(
-                    message,
-                    f"⏳ Следующий цикл через {self.interval} сек"
-                )
                 await asyncio.sleep(self.interval)
