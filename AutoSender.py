@@ -142,10 +142,7 @@ class AutoSenderMod(loader.Module):
             folder_chats = []
             
             for dialog in dialogs:
-                if (hasattr(dialog, 'folder') and 
-                    dialog.folder and 
-                    dialog.folder.title.lower() == folder_name.lower()):
-                    
+                if (hasattr(dialog, 'folder') and dialog.folder and (dialog.folder.title.lower() == folder_name.lower()):
                     try:
                         entity = await self.client.get_input_entity(dialog.entity)
                         folder_chats.append(entity)
