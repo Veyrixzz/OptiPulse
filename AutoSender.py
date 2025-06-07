@@ -29,7 +29,7 @@ class AutoSenderMod(loader.Module):
     }
 
     def __init__(self):
-        self.config = loader.ModuleConfig(
+        self.config = loader.ModuleConfig()
             loader.ConfigValue(
                 "delay",
                 1,
