@@ -1,200 +1,158 @@
 # meta developer: @OptiPulseMod
+# scope: user
+# requires: hikka
 
 """
-AutoSpammer Module for Userbot (работает от вашего аккаунта)
+AutoSpammer Module for Hikka Userbot
+Рассылка сообщений в выбранные чаты и папки
 """
 
 from hikka import loader, utils
+from telethon.tl.types import Dialog
 import asyncio
-from telethon.tl.types import Dialog, InputPeerChannel, InputPeerChat
 
 @loader.tds
 class AutoSenderMod(loader.Module):
     """Авторассылка сообщений от вашего аккаунта"""
 
     strings = {
-        "name": "AccountSpammer",
-        "start": "✅ Рассылка запущена от вашего аккаунта",
+        "name": "AutoSender",
+        "start": "✅ Рассылка запущена!",
         "stop": "⛔ Рассылка остановлена",
-        "no_text": "❌ Не указан текст сообщения",
-        "no_targets": "❌ Не указаны чаты/папки",
+        "no_text": "❌ Не указан текст",
+        "no_targets": "❌ Не указаны цели (чаты или папки)",
         "added_chats": "💬 Добавлены чаты: {}",
         "added_folders": "📂 Добавлены папки: {}",
         "text_set": "📝 Текст установлен",
-        "interval_set": "⏱ Интервал: {} сек",
-        "delay_set": "⏳ Задержка: {} сек",
+        "delay_set": "⏱ Задержка: {} сек",
+        "interval_set": "🔁 Интервал: {} сек",
         "folder_stats": "📊 В папке '{}' найдено {} чатов",
-        "sending_stats": "📤 Отправлено {}/{} сообщений",
-        "error": "❌ Ошибка в {}: {}",
-        "folder_error": "❌ Ошибка в папке '{}': {}",
-        "invalid_delay": "❌ Задержка должна быть от 1 до 10 секунд",
-        "invalid_interval": "❌ Интервал должен быть от 10 секунд"
+        "sending_stats": "📤 Отправлено {}/{}",
+        "error": "⚠️ Ошибка в {}: {}",
+        "invalid_delay": "❗ Задержка от 1 до 10 сек",
+        "invalid_interval": "❗ Интервал от 10 сек",
     }
 
     def __init__(self):
-        self.config = loader.ModuleConfig(
-            loader.ConfigValue(
-                "delay",
-                1,
-                "Задержка между сообщениями",
-                validator=loader.validators.Integer(minimum=1, maximum=10)
-        )
         self.text = None
         self.chats = []
         self.folders = []
+        self.delay = 2
         self.interval = 60
+        self.running = False
         self.task = None
-        self.is_active = False
-
-    async def client_ready(self, client, db):
-        self.client = client
-
-    @loader.command()
-    async def aspam_chats(self, message):
-        """<@username/id> - Добавить чаты для рассылки"""
-        args = utils.get_args_raw(message)
-        if not args:
-            return await utils.answer(message, "❌ Укажите чаты через пробел")
-        
-        self.chats = list(set(args.split()))
-        await utils.answer(message, self.strings["added_chats"].format(len(self.chats)))
-
-    @loader.command()
-    async def aspam_folders(self, message):
-        """<названия> - Добавить папки для рассылки"""
-        args = utils.get_args_raw(message)
-        if not args:
-            return await utils.answer(message, "❌ Укажите папки через запятую")
-        
-        self.folders = [f.strip() for f in args.split(",")]
-        await utils.answer(message, self.strings["added_folders"].format(len(self.folders)))
 
     @loader.command()
     async def aspam_text(self, message):
-        """<текст> - Установить текст"""
+        """<текст> — Установить текст сообщения"""
+        text = utils.get_args_raw(message)
+        if not text:
+            return await utils.answer(message, self.strings("no_text"))
+        self.text = text
+        await utils.answer(message, self.strings("text_set"))
+
+    @loader.command()
+    async def aspam_chats(self, message):
+        """<@юзер/ID> — Добавить чаты"""
         args = utils.get_args_raw(message)
         if not args:
-            return await utils.answer(message, self.strings["no_text"])
-        
-        self.text = args
-        await utils.answer(message, self.strings["text_set"])
+            return await utils.answer(message, "❌ Укажите чаты через пробел")
+        self.chats = list(set(args.split()))
+        await utils.answer(message, self.strings("added_chats").format(len(self.chats)))
+
+    @loader.command()
+    async def aspam_folders(self, message):
+        """<название,название> — Добавить папки"""
+        args = utils.get_args_raw(message)
+        if not args:
+            return await utils.answer(message, "❌ Укажите названия папок через запятую")
+        self.folders = [f.strip() for f in args.split(",")]
+        await utils.answer(message, self.strings("added_folders").format(len(self.folders)))
 
     @loader.command()
     async def aspam_delay(self, message):
-        """<секунды> - Установить задержку между сообщениями (1-10 сек)"""
+        """<сек> — Задержка между сообщениями"""
         args = utils.get_args_raw(message)
-        if not args:
-            return await utils.answer(message, "❌ Укажите задержку в секундах")
-        
         try:
-            delay = int(args)
-            if delay < 1 or delay > 10:
-                return await utils.answer(message, self.strings["invalid_delay"])
-            
-            self.config["delay"] = delay
-            await utils.answer(message, self.strings["delay_set"].format(delay))
-        except ValueError:
-            await utils.answer(message, "❌ Укажите число от 1 до 10")
+            d = int(args)
+            if not 1 <= d <= 10:
+                return await utils.answer(message, self.strings("invalid_delay"))
+            self.delay = d
+            await utils.answer(message, self.strings("delay_set").format(d))
+        except:
+            await utils.answer(message, "❌ Неверный ввод")
 
     @loader.command()
     async def aspam_interval(self, message):
-        """<секунды> - Установить интервал между циклами"""
+        """<сек> — Интервал между циклами"""
         args = utils.get_args_raw(message)
-        if not args:
-            return await utils.answer(message, "❌ Укажите интервал в секундах")
-        
         try:
-            interval = int(args)
-            if interval < 10:
-                return await utils.answer(message, self.strings["invalid_interval"])
-            
-            self.interval = interval
-            await utils.answer(message, self.strings["interval_set"].format(interval))
-        except ValueError:
-            await utils.answer(message, "❌ Укажите число (минимум 10)")
+            i = int(args)
+            if i < 10:
+                return await utils.answer(message, self.strings("invalid_interval"))
+            self.interval = i
+            await utils.answer(message, self.strings("interval_set").format(i))
+        except:
+            await utils.answer(message, "❌ Неверный ввод")
 
     @loader.command()
     async def aspam_start(self, message):
-        """Запустить рассылку"""
+        """🚀 Старт рассылки"""
         if not self.text:
-            return await utils.answer(message, self.strings["no_text"])
+            return await utils.answer(message, self.strings("no_text"))
         if not self.chats and not self.folders:
-            return await utils.answer(message, self.strings["no_targets"])
+            return await utils.answer(message, self.strings("no_targets"))
+        if self.running:
+            return await utils.answer(message, "❗ Уже работает")
 
-        self.is_active = True
+        self.running = True
         self.task = asyncio.create_task(self._spam_loop(message))
-        await utils.answer(message, self.strings["start"])
+        await utils.answer(message, self.strings("start"))
 
     @loader.command()
     async def aspam_stop(self, message):
-        """Остановить рассылку"""
-        self.is_active = False
+        """🛑 Остановить рассылку"""
+        self.running = False
         if self.task:
             self.task.cancel()
-        await utils.answer(message, self.strings["stop"])
+        await utils.answer(message, self.strings("stop"))
 
-    async def _get_chats_in_folder(self, folder_name):
-        """Находит все чаты в указанной папке"""
-        try:
-            dialogs = await self.client.get_dialogs()
-            folder_chats = []
-            
-            for dialog in dialogs:
-                if (hasattr(dialog, 'folder') and dialog.folder and (dialog.folder.title.lower() == folder_name.lower()):
-                    try:
-                        entity = await self.client.get_input_entity(dialog.entity)
-                        folder_chats.append(entity)
-                    except Exception as e:
-                        print(f"Error getting entity: {e}")
-            
-            return folder_chats
-        except Exception as e:
-            print(f"Folder error: {e}")
-            return []
+    async def _get_folder_chats(self, folder_name):
+        """Поиск чатов в папке по имени"""
+        dialogs = await self.client.get_dialogs()
+        results = []
+        for dialog in dialogs:
+            if isinstance(dialog, Dialog):
+                folder = getattr(dialog, 'folder', None)
+                if folder and folder.title.lower() == folder_name.lower():
+                    results.append(dialog.entity)
+        return results
 
     async def _spam_loop(self, message):
-        while self.is_active:
-            targets = []
-            
-            targets.extend(self.chats)
-            
+        while self.running:
+            targets = list(self.chats)
             for folder in self.folders:
-                folder_chats = await self._get_chats_in_folder(folder)
-                if folder_chats:
-                    targets.extend(folder_chats)
-                    await utils.answer(
-                        message,
-                        self.strings["folder_stats"].format(folder, len(folder_chats))
-                    )
-            
-            if not targets:
-                await utils.answer(message, self.strings["no_targets"])
-                self.is_active = False
-                return
-            
+                try:
+                    chats = await self._get_folder_chats(folder)
+                    targets.extend(chats)
+                    await utils.answer(message, self.strings("folder_stats").format(folder, len(chats)))
+                except Exception as e:
+                    await utils.answer(message, self.strings("error").format(folder, str(e)))
+
             total = len(targets)
             success = 0
-            
-            for target in targets:
-                if not self.is_active:
-                    break
-                
+            for chat in targets:
+                if not self.running:
+                    return
                 try:
-                    await self.client.send_message(target, self.text)
+                    entity = await self.client.get_entity(chat)
+                    await self.client.send_message(entity, self.text)
                     success += 1
-                    
                     if success % 5 == 0 or success == total:
-                        await utils.answer(
-                            message,
-                            self.strings["sending_stats"].format(success, total)
-                        )
-                    
-                    await asyncio.sleep(self.config["delay"])
+                        await utils.answer(message, self.strings("sending_stats").format(success, total))
+                    await asyncio.sleep(self.delay)
                 except Exception as e:
-                    await utils.answer(
-                        message,
-                        self.strings["error"].format(target, str(e))
-                    )
-            
-            if self.is_active:
+                    await utils.answer(message, self.strings("error").format(chat, str(e)))
+
+            if self.running:
                 await asyncio.sleep(self.interval)
