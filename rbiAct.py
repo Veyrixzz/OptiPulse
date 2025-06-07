@@ -12,11 +12,11 @@ class RobloxInfoMod(loader.Module):
         username = utils.get_args_raw(m)
         if not username:
             return await m.edit("Укажи ник в Roblox")
+user_res = requests.post(
+    "https://users.roblox.com/v1/usernames/users",
+    json={"usernames": [username], "excludeBannedUsers": False}
+)
 
-        # Получение ID по нику
-        user_res = requests.get(
-            f"https://users.roblox.com/v1/usernames/users", 
-            json={"usernames": [username], "excludeBannedUsers": False}
         )
         if user_res.status_code != 200 or not user_res.json().get("data"):
             return await m.edit("Пользователь не найден :(")
