@@ -29,12 +29,13 @@ class AutoSenderMod(loader.Module):
     }
 
     def __init__(self):
-        self.config = loader.ModuleConfig()
+        self.config = loader.ModuleConfig(  # Fixed: Added closing parenthesis
             loader.ConfigValue(
                 "delay",
                 1,
                 "Задержка между сообщениями",
                 validator=loader.validators.Integer(minimum=1, maximum=10)
+            )
         )
         self.text = None
         self.chats = []
@@ -168,4 +169,4 @@ class AutoSenderMod(loader.Module):
             
             # Пауза между циклами
             if self.is_active:
-                await asyncio.sleep(self.interval)
+                await asyncio.sleep(self.interval)  # Fixed: Removed extra parenthesis
