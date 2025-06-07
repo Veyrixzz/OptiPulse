@@ -5,7 +5,6 @@ AutoSpammer Module for Heroku Userbot
 
 Copyright (c) 2025 @OptiPulseMod
 
-
 License:
 
 EN:
@@ -25,26 +24,38 @@ from telethon.tl.types import Dialog, Folder, InputPeerChannel, InputPeerChat
 
 @loader.tds
 class AutoSenderMod(loader.Module):
-    """Авторассылка сообщений в выбранные группы/папки через заданный интервал"""
+    """Авторассылка в чаты/папки с раздельными настройками"""
 
     strings = {
-        "name": "AutoSpammer",
+        "name": "AutoSpammerPro",
         "start_spam": "✅ Авторассылка запущена.",
         "stop_spam": "⛔ Авторассылка остановлена.",
         "interval_set": "⏱ Интервал установлен: {} секунд.",
         "text_set": "📝 Текст сообщения установлен.",
-        "groups_set": "📨 Группы/папки установлены: {}.",
-        "no_groups": "❌ Не указаны группы/папки.",
+        "chats_set": "💬 Чаты установлены: {}.",
+        "folders_set": "📂 Папки установлены: {}.",
+        "no_targets": "❌ Не указаны ни чаты, ни папки.",
         "no_text": "❌ Не указан текст сообщения.",
-        "folder_processing": "📂 Обработка папки: {}",
+        "folder_processing": "📂 Обработка папки: {} ({} чатов)",
         "folder_error": "❌ Ошибка при обработке папки: {}",
-        "invalid_target": "❌ Некорректная цель: {}",
+        "invalid_chat": "❌ Некорректный чат: {}",
+        "stats": "📊 Статистика: отправлено {} из {} сообщений",
+        "delay_set": "⏳ Задержка между сообщениями: {} сек.",
     }
 
     def __init__(self):
+        self.config = loader.ModuleConfig(
+            loader.ConfigValue(
+                "delay_between_messages",
+                1,
+                "Задержка между отправкой сообщений (сек)",
+                validator=loader.validators.Integer(minimum=1, maximum=60)
+            )
+        )
         self.text = None
-        self.groups = []
-        self.interval = 60
+        self.chats = []  # Отдельные чаты
+        self.folders = []  # Папки с чатами
+        self.interval = 60  # Интервал между циклами
         self.task = None
         self.running = False
         self.message = None
@@ -52,32 +63,62 @@ class AutoSenderMod(loader.Module):
     async def client_ready(self, client, db):
         self.client = client
 
-    async def autogroupcmd(self, message):
-        """<ссылки_или_ID_групп/папок> — Установить список групп/папок для авторассылки"""
+    @loader.command(alias="autochat")
+    async def autochatcmd(self, message):
+        """<@ или ID чатов> - Добавить отдельные чаты для рассылки"""
         args = utils.get_args_raw(message)
         if not args:
-            return await utils.answer(message, self.strings("no_groups"))
-        self.groups = args.split()
-        await utils.answer(message, self.strings("groups_set").format(', '.join(self.groups)))
+            return await utils.answer(message, "❌ Укажите чаты через пробел")
+        
+        new_chats = args.split()
+        self.chats.extend(new_chats)
+        self.chats = list(set(self.chats))  # Удаляем дубли
+        
+        await utils.answer(message, self.strings("chats_set").format(', '.join(self.chats)))
 
+    @loader.command(alias="autofolder")
+    async def autofoldercmd(self, message):
+        """<названия папок> - Добавить папки для рассылки (через запятую)"""
+        args = utils.get_args_raw(message)
+        if not args:
+            return await utils.answer(message, "❌ Укажите названия папок через запятую")
+        
+        new_folders = [f.strip() for f in args.split(",")]
+        self.folders.extend(new_folders)
+        self.folders = list(set(self.folders))  # Удаляем дубли
+        
+        await utils.answer(message, self.strings("folders_set").format(', '.join(self.folders)))
+
+    @loader.command(alias="autotext")
     async def autotextcmd(self, message):
-        """<текст> — Установить текст для авторассылки"""
+        """<текст> - Установить текст для рассылки"""
         args = utils.get_args_raw(message)
         if not args:
             return await utils.answer(message, self.strings("no_text"))
         self.text = args
         await utils.answer(message, self.strings("text_set"))
 
+    @loader.command(alias="autotime")
     async def autotimecmd(self, message):
-        """<секунды> — Установить интервал между сообщениями"""
+        """<секунды> - Интервал между циклами рассылки"""
         args = utils.get_args(message)
         if not args or not args[0].isdigit():
-            return await utils.answer(message, "❌ Укажите корректное число в секундах.")
+            return await utils.answer(message, "❌ Укажите число в секундах")
         self.interval = int(args[0])
         await utils.answer(message, self.strings("interval_set").format(self.interval))
 
+    @loader.command(alias="autodelay")
+    async def autodelaycmd(self, message):
+        """<секунды> - Задержка между сообщениями"""
+        args = utils.get_args(message)
+        if not args or not args[0].isdigit():
+            return await utils.answer(message, "❌ Укажите число от 1 до 60")
+        self.config["delay_between_messages"] = int(args[0])
+        await utils.answer(message, self.strings("delay_set").format(self.config["delay_between_messages"]))
+
+    @loader.command(alias="autosend")
     async def autosendcmd(self, message):
-        """Включить или выключить авторассылку"""
+        """Включить/выключить рассылку"""
         self.message = message
         if self.running:
             self.running = False
@@ -85,8 +126,8 @@ class AutoSenderMod(loader.Module):
                 self.task.cancel()
             return await utils.answer(message, self.strings("stop_spam"))
         
-        if not self.groups:
-            return await utils.answer(message, self.strings("no_groups"))
+        if not self.chats and not self.folders:
+            return await utils.answer(message, self.strings("no_targets"))
         if not self.text:
             return await utils.answer(message, self.strings("no_text"))
 
@@ -94,56 +135,69 @@ class AutoSenderMod(loader.Module):
         self.task = asyncio.create_task(self._autospam())
         await utils.answer(message, self.strings("start_spam"))
 
-    async def _get_chats_from_folder(self, folder_name):
-        """Получает все чаты из указанной папки"""
-        try:
+    async def _get_all_targets(self):
+        """Получает все цели: и чаты, и из папок"""
+        targets = []
+        
+        # Добавляем отдельные чаты
+        targets.extend(self.chats)
+        
+        # Добавляем чаты из папок
+        if self.folders:
             dialogs = await self.client.get_dialogs()
-            folder_chats = []
-            
-            for dialog in dialogs:
-                if hasattr(dialog, 'folder') and dialog.folder and dialog.folder.title.lower() == folder_name.lower():
-                    if isinstance(dialog.entity, (InputPeerChannel, InputPeerChat)):
-                        folder_chats.append(dialog.entity)
-                    else:
+            for folder_name in self.folders:
+                folder_chats = []
+                for dialog in dialogs:
+                    if hasattr(dialog, 'folder') and dialog.folder and dialog.folder.title.lower() == folder_name.lower():
                         try:
                             entity = await self.client.get_input_entity(dialog.entity)
                             folder_chats.append(entity)
                         except Exception as e:
-                            print(f"[AutoSpammer] Не удалось получить entity для диалога: {e}")
-            
-            return folder_chats
-        except Exception as e:
-            print(f"[AutoSpammer] Ошибка при получении чатов из папки: {e}")
-            return []
+                            print(f"[AutoSpammer] Ошибка получения entity: {e}")
+                
+                if folder_chats:
+                    targets.extend(folder_chats)
+                    await utils.answer(self.message, self.strings("folder_processing").format(
+                        folder_name, len(folder_chats)
+                    )
+                else:
+                    await utils.answer(self.message, self.strings("folder_error").format(folder_name))
+        
+        return list(set(targets))  # Удаляем возможные дубли
 
     async def _autospam(self):
         while self.running:
-            for target in self.groups:
-                try:
-                    # Если цель - папка (начинается с folder:)
-                    if target.lower().startswith("folder:"):
-                        folder_name = target[7:].strip()
-                        await utils.answer(self.message, self.strings("folder_processing").format(folder_name))
-                        
-                        chats = await self._get_chats_from_folder(folder_name)
-                        if not chats:
-                            await utils.answer(self.message, self.strings("folder_error").format(folder_name))
-                            continue
-                            
-                        for chat in chats:
-                            try:
-                                await self.client.send_message(chat, self.text)
-                                await asyncio.sleep(1)  # Небольшая задержка между сообщениями
-                            except Exception as e:
-                                print(f"[AutoSpammer] Ошибка при отправке в чат {chat}: {e}")
-                    else:
-                        # Обычная группа/чат
-                        try:
-                            await self.client.send_message(target, self.text)
-                        except Exception as e:
-                            print(f"[AutoSpammer] Ошибка при отправке в {target}: {e}")
-                            await utils.answer(self.message, self.strings("invalid_target").format(target))
-                except Exception as e:
-                    print(f"[AutoSpammer] Ошибка при обработке цели {target}: {e}")
+            targets = await self._get_all_targets()
+            if not targets:
+                await utils.answer(self.message, "❌ Нет доступных целей для рассылки!")
+                self.running = False
+                return
             
-            await asyncio.sleep(self.interval)
+            total = len(targets)
+            success = 0
+            
+            for target in targets:
+                if not self.running:
+                    break
+                
+                try:
+                    await self.client.send_message(target, self.text)
+                    success += 1
+                    
+                    # Обновляем статистику каждые 5 сообщений
+                    if success % 5 == 0:
+                        await utils.answer(self.message, self.strings("stats").format(success, total))
+                    
+                    # Задержка между сообщениями
+                    await asyncio.sleep(self.config["delay_between_messages"])
+                except Exception as e:
+                    print(f"[AutoSpammer] Ошибка отправки в {target}: {e}")
+                    if "InputPeerChat" in str(target):
+                        await utils.answer(self.message, self.strings("invalid_chat").format(target))
+            
+            if self.running:
+                final_msg = f"🌀 Цикл завершен. Успешно: {success}/{total}"
+                if success < total:
+                    final_msg += f"\n❌ Не удалось отправить: {total - success}"
+                await utils.answer(self.message, final_msg)
+                await asyncio.sleep(self.interval)
