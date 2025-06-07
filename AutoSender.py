@@ -38,6 +38,7 @@ class AutoSenderMod(loader.Module):
                 1,
                 "Задержка между сообщениями",
                 validator=loader.validators.Integer(minimum=1, maximum=10)
+            ),
         )
         self.text = None
         self.chats = []
