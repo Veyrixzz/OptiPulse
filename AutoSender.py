@@ -53,9 +53,9 @@ class AutoSenderMod(loader.Module):
             )
         )
         self.text = None
-        self.chats = []  # Отдельные чаты
-        self.folders = []  # Папки с чатами
-        self.interval = 60  # Интервал между циклами
+        self.chats = []
+        self.folders = []
+        self.interval = 60
         self.task = None
         self.running = False
         self.message = None
@@ -72,7 +72,7 @@ class AutoSenderMod(loader.Module):
         
         new_chats = args.split()
         self.chats.extend(new_chats)
-        self.chats = list(set(self.chats))  # Удаляем дубли
+        self.chats = list(set(self.chats))
         
         await utils.answer(message, self.strings("chats_set").format(', '.join(self.chats)))
 
@@ -85,7 +85,7 @@ class AutoSenderMod(loader.Module):
         
         new_folders = [f.strip() for f in args.split(",")]
         self.folders.extend(new_folders)
-        self.folders = list(set(self.folders))  # Удаляем дубли
+        self.folders = list(set(self.folders))
         
         await utils.answer(message, self.strings("folders_set").format(', '.join(self.folders)))
 
@@ -139,10 +139,8 @@ class AutoSenderMod(loader.Module):
         """Получает все цели: и чаты, и из папок"""
         targets = []
         
-        # Добавляем отдельные чаты
         targets.extend(self.chats)
         
-        # Добавляем чаты из папок
         if self.folders:
             dialogs = await self.client.get_dialogs()
             for folder_name in self.folders:
@@ -157,13 +155,13 @@ class AutoSenderMod(loader.Module):
                 
                 if folder_chats:
                     targets.extend(folder_chats)
-                    await utils.answer(self.message, self.strings("folder_processing").format(
-                        folder_name, len(folder_chats)
-                    )
+                    await utils.answer(
+                        self.message,
+                        self.strings("folder_processing").format(folder_name, len(folder_chats))
                 else:
                     await utils.answer(self.message, self.strings("folder_error").format(folder_name))
         
-        return list(set(targets))  # Удаляем возможные дубли
+        return list(set(targets))
 
     async def _autospam(self):
         while self.running:
@@ -184,11 +182,9 @@ class AutoSenderMod(loader.Module):
                     await self.client.send_message(target, self.text)
                     success += 1
                     
-                    # Обновляем статистику каждые 5 сообщений
                     if success % 5 == 0:
                         await utils.answer(self.message, self.strings("stats").format(success, total))
                     
-                    # Задержка между сообщениями
                     await asyncio.sleep(self.config["delay_between_messages"])
                 except Exception as e:
                     print(f"[AutoSpammer] Ошибка отправки в {target}: {e}")
