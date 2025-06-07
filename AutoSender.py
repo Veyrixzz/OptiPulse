@@ -25,17 +25,19 @@ class AutoSenderMod(loader.Module):
         "delay_set": "⏳ Задержка: {} сек",
         "folder_stats": "📊 В папке '{}' найдено {} чатов",
         "sending_stats": "📤 Отправлено {}/{} сообщений",
-        "error": "❌ Ошибка в {}: {}"
+        "error": "❌ Ошибка в {}: {}",
+        "folder_error": "❌ Ошибка в папке '{}': {}",
+        "invalid_delay": "❌ Задержка должна быть от 1 до 10 секунд",
+        "invalid_interval": "❌ Интервал должен быть от 10 секунд"
     }
 
     def __init__(self):
-        self.config = loader.ModuleConfig(  # Fixed: Added closing parenthesis
+        self.config = loader.ModuleConfig(
             loader.ConfigValue(
                 "delay",
                 1,
                 "Задержка между сообщениями",
                 validator=loader.validators.Integer(minimum=1, maximum=10)
-            )
         )
         self.text = None
         self.chats = []
@@ -78,6 +80,40 @@ class AutoSenderMod(loader.Module):
         await utils.answer(message, self.strings["text_set"])
 
     @loader.command()
+    async def aspam_delay(self, message):
+        """<секунды> - Установить задержку между сообщениями (1-10 сек)"""
+        args = utils.get_args_raw(message)
+        if not args:
+            return await utils.answer(message, "❌ Укажите задержку в секундах")
+        
+        try:
+            delay = int(args)
+            if delay < 1 or delay > 10:
+                return await utils.answer(message, self.strings["invalid_delay"])
+            
+            self.config["delay"] = delay
+            await utils.answer(message, self.strings["delay_set"].format(delay))
+        except ValueError:
+            await utils.answer(message, "❌ Укажите число от 1 до 10")
+
+    @loader.command()
+    async def aspam_interval(self, message):
+        """<секунды> - Установить интервал между циклами"""
+        args = utils.get_args_raw(message)
+        if not args:
+            return await utils.answer(message, "❌ Укажите интервал в секундах")
+        
+        try:
+            interval = int(args)
+            if interval < 10:
+                return await utils.answer(message, self.strings["invalid_interval"])
+            
+            self.interval = interval
+            await utils.answer(message, self.strings["interval_set"].format(interval))
+        except ValueError:
+            await utils.answer(message, "❌ Укажите число (минимум 10)")
+
+    @loader.command()
     async def aspam_start(self, message):
         """Запустить рассылку"""
         if not self.text:
@@ -95,6 +131,7 @@ class AutoSenderMod(loader.Module):
         self.is_active = False
         if self.task:
             self.task.cancel()
+            self.task = None
         await utils.answer(message, self.strings["stop"])
 
     async def _get_chats_in_folder(self, folder_name):
@@ -104,33 +141,33 @@ class AutoSenderMod(loader.Module):
             folder_chats = []
             
             for dialog in dialogs:
-                if (hasattr(dialog, 'folder') and 
-                    dialog.folder and 
-                    dialog.folder.title.lower() == folder_name.lower()):
-                    
-                    try:
-                        entity = await self.client.get_input_entity(dialog.entity)
-                        folder_chats.append(entity)
-                    except Exception as e:
-                        print(f"Error getting entity: {e}")
-            
-            return folder_chats
+                if (hasattr(dialog, 'folder') and dialog.folder:
+                    if dialog.folder.title.lower() == folder_name.lower():
+                        try:
+                            entity = await self.client.get_input_entity(dialog.entity)
+                            folder_chats.append(entity)
+                        except Exception as e:
+                            self.logger.error(f"Error getting entity: {e}")
+            return folder_chats, None
         except Exception as e:
-            print(f"Folder error: {e}")
-            return []
+            return [], str(e)
 
     async def _spam_loop(self, message):
         while self.is_active:
-            # Собираем все цели
             targets = []
             
-            # Добавляем отдельные чаты
+         
             targets.extend(self.chats)
             
-            # Добавляем чаты из папок
+      
             for folder in self.folders:
-                folder_chats = await self._get_chats_in_folder(folder)
-                if folder_chats:
+                folder_chats, error = await self._get_chats_in_folder(folder)
+                if error:
+                    await utils.answer(
+                        message,
+                        self.strings["folder_error"].format(folder, error)
+                    )
+                elif folder_chats:
                     targets.extend(folder_chats)
                     await utils.answer(
                         message,
@@ -142,7 +179,7 @@ class AutoSenderMod(loader.Module):
                 self.is_active = False
                 return
             
-            # Отправка сообщений
+         
             total = len(targets)
             success = 0
             
@@ -160,6 +197,7 @@ class AutoSenderMod(loader.Module):
                             self.strings["sending_stats"].format(success, total)
                         )
                     
+               
                     await asyncio.sleep(self.config["delay"])
                 except Exception as e:
                     await utils.answer(
@@ -167,6 +205,10 @@ class AutoSenderMod(loader.Module):
                         self.strings["error"].format(target, str(e))
                     )
             
-            # Пауза между циклами
+           
             if self.is_active:
-                await asyncio.sleep(self.interval)  # Fixed: Removed extra parenthesis
+                await utils.answer(
+                    message,
+                    f"⏳ Следующий цикл через {self.interval} сек"
+                )
+                await asyncio.sleep(self.interval)
