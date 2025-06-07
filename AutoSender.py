@@ -142,13 +142,16 @@ class AutoSenderMod(loader.Module):
             folder_chats = []
             
             for dialog in dialogs:
-                if (hasattr(dialog, 'folder') and dialog.folder:
-                    if dialog.folder.title.lower() == folder_name.lower():
-                        try:
-                            entity = await self.client.get_input_entity(dialog.entity)
-                            folder_chats.append(entity)
-                        except Exception as e:
-                            self.logger.error(f"Error getting entity: {e}")
+                if (hasattr(dialog, 'folder') and 
+                    dialog.folder and 
+                    dialog.folder.title.lower() == folder_name.lower()):
+                    
+                    try:
+                        entity = await self.client.get_input_entity(dialog.entity)
+                        folder_chats.append(entity)
+                    except Exception as e:
+                        print(f"Error getting entity: {e}")
+            
             return folder_chats, None
         except Exception as e:
             return [], str(e)
@@ -157,10 +160,8 @@ class AutoSenderMod(loader.Module):
         while self.is_active:
             targets = []
             
-         
             targets.extend(self.chats)
             
-      
             for folder in self.folders:
                 folder_chats, error = await self._get_chats_in_folder(folder)
                 if error:
@@ -173,14 +174,12 @@ class AutoSenderMod(loader.Module):
                     await utils.answer(
                         message,
                         self.strings["folder_stats"].format(folder, len(folder_chats))
-                    )
             
             if not targets:
                 await utils.answer(message, self.strings["no_targets"])
                 self.is_active = False
                 return
             
-         
             total = len(targets)
             success = 0
             
@@ -198,7 +197,6 @@ class AutoSenderMod(loader.Module):
                             self.strings["sending_stats"].format(success, total)
                         )
                     
-               
                     await asyncio.sleep(self.config["delay"])
                 except Exception as e:
                     await utils.answer(
@@ -206,7 +204,6 @@ class AutoSenderMod(loader.Module):
                         self.strings["error"].format(target, str(e))
                     )
             
-           
             if self.is_active:
                 await utils.answer(
                     message,
