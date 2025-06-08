@@ -1,8 +1,4 @@
 # meta developer: @OptiPulseMod
-
-
-
-
 from .. import loader, utils
 from gtts import gTTS
 from pydub import AudioSegment
