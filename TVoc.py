@@ -10,12 +10,12 @@ class TVoc(loader.Module):
     async def client_ready(self, client, db):
         self.db = db
         self.voice = db.get("TVoc", "voice", "Olga")
-        self.key = os.getenv("VOICERSS_API_KEY")
+        self.key = os.getenv("0ef1358805f24629a3ee6b87f3414f26")
         if not self.key:
             client.logger.error("TVoc: отсутствует VOICERSS_API_KEY")
 
     async def tvoccmd(self, message):
-        """.tvoc <текст> — озвучить текст текущим голосом."""
+        """<текст> — озвучить текст текущим голосом."""
         text = utils.get_args_raw(message)
         if not text:
             await message.edit("💬 Использование: `.tvoc Привет, мир!`")
