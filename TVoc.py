@@ -1,51 +1,60 @@
 # meta developer: @OptiPulseMod
 from .. import loader, utils
-from gtts import gTTS
-from pydub import AudioSegment
+import edge_tts
+import asyncio
 import os
-import io
+from tempfile import NamedTemporaryFile
 
-class TVoc(loader.Module):
-    strings = {"name": "TVoc"}
+@loader.tds
+class TVocEdge(loader.Module):
+    """Озвучка текста."""
+    strings = {
+        "name": "TVoc",
+        "no_text": "❌ Укажи текст для озвучки.",
+        "error": "❌ Ошибка TTS: ",
+        "voices": "🎤 Примеры голосов:\n- ru-RU-SvetlanaNeural (женский)\n- ru-RU-DmitryNeural (мужской)",
+        "setvoice": "✅ Голос установлен: ",
+    }
 
-    async def client_ready(self, client, db):
-        self.voice = self.get("voice", "ru")  # ru = женский русский
+    def __init__(self):
+        self.voice = "ru-RU-SvetlanaNeural"
 
     async def tvoccmd(self, message):
+        """Озвучить текст: .tvoc <текст>"""
         text = utils.get_args_raw(message)
         if not text:
-            return await message.edit("💬 Введите текст: `.tvoc Привет, мир!`")
+            return await utils.answer(message, self.strings("no_text"))
 
-        await message.edit(f"🎤 Генерирую речь ({self.voice})...")
+        path = None
         try:
-            tts = gTTS(text=text, lang=self.voice)
-            mp3_fp = io.BytesIO()
-            tts.write_to_fp(mp3_fp)
-            mp3_fp.seek(0)
+            with NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                path = f.name
 
-            ogg_fp = io.BytesIO()
-            sound = AudioSegment.from_file(mp3_fp, format="mp3")
-            sound.export(ogg_fp, format="ogg", codec="libopus")
-            ogg_fp.seek(0)
+            communicate = edge_tts.Communicate(text=text, voice=self.voice)
+            await communicate.save(path)
 
-            await message.client.send_file(message.chat_id, ogg_fp, voice_note=True,
-                                           reply_to=message.reply_to_msg_id)
-            await message.delete()
+            await message.client.send_file(
+                message.chat_id,
+                file=path,
+                voice_note=True,
+                reply_to=message.reply_to_msg_id
+            )
         except Exception as e:
-            await message.edit(f"❌ Ошибка TTS: {e}")
+            return await utils.answer(message, self.strings("error") + str(e))
+        finally:
+            if path and os.path.exists(path):
+                os.remove(path)
+            await message.delete()
 
-    async def setvoicecmd(self, message):
-        name = utils.get_args_raw(message).strip()
-        avail = {"ru": "женский русский", "ru-fast": "русский, быстрее"}
-        if not name:
-            return await message.edit(f"🎙 Текущий голос: {self.voice}\nДоступны: {', '.join(avail.keys())}")
+    async def tvocvoicecmd(self, message):
+        """Изменить голос: .tvocvoice <имя>"""
+        voice = utils.get_args_raw(message).strip()
+        if voice:
+            self.voice = voice
+            await utils.answer(message, self.strings("setvoice") + voice)
+        else:
+            await utils.answer(message, self.strings("voices"))
 
-        if name not in avail:
-            return await message.edit(f"❌ Нет такого голоса. Доступны: {', '.join(avail.keys())}")
-
-        self.set("voice", name)
-        self.voice = name
-        await message.edit(f"✅ Голос установлен: {name} ({avail[name]})")
-
-    async def voicescmd(self, message):
-        await message.edit("🎧 Доступные голоса:\n- ru (русский, женский)\n- ru-fast (русский, под быструю речь)\nСменить: `.setvoice <имя>`")
+    async def tvocvoicescmd(self, message):
+        """Показать примеры голосов: .tvocvoices"""
+        await utils.answer(message, self.strings("voices"))
